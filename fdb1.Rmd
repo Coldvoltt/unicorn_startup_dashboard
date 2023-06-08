@@ -1,0 +1,236 @@
+---
+title: "Unicorn Startups dashboard"
+runtime: shiny
+output: 
+  flexdashboard::flex_dashboard:
+    logo: wcWhite.png
+    theme: 
+      base_font_size: 8
+      bg: "#ffffff"
+      fg: "#3c1642" 
+      primary: "#240046"
+      base_font:
+        google: Prompt
+      code_font:
+        google: JetBrains Mono
+    orientation: columns
+    vertical_layout: fill
+---
+
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+library(thematic)
+library(plotly)
+library(tidyverse)
+
+
+df<- read_csv("World_Wide_Unicorn_Startups.csv")
+spec(df)
+
+
+df<- df |> 
+  mutate_at(vars(Country, City, Industry), as.factor) |> 
+  mutate(Date = as.Date(Date, format = "%m/%d/%Y"),
+         Country = recode_factor(Country, "United States," = "United States"),
+         Country = recode_factor(Country, "Indonesia," = "Indonesia"),
+         Industry = recode_factor(Industry, "Finttech" = "Fintech"))
+
+
+df<- df |> 
+  select(-c(year, month, day, Investors))
+```
+
+```{r}
+thematic_rmd()
+```
+
+# About
+
+Column {data-width = 400}
+-----------------------------------------------------------------------
+### About the dashboard
+
+Welcome to my dashboard on unicorn startups around the world! 
+
+In the world of entrepreneurship, the term "unicorn" is used to describe startups that have reached a valuation of $1 billion or more. These companies are considered rare and magical, much like their namesake, and have captured the imagination of investors, entrepreneurs, and the general public alike.
+
+In this dashboard, you'll find information and charts on some of the most exciting and successful unicorn startups in the world, including their valuations, and industries. Use this dashboard to explore the fascinating world of unicorn startups.
+
+### About Alexander Paul
+
+Welcome to my profile! I am a data analyst and machine learning practitioner with a strong background in statistics. With my expertise in R and Python programming languages, I can perform advanced data analysis and develop effective machine learning models to solve complex business problems.
+
+My proficiency in Excel and SPSS allows me to handle large datasets and perform statistical analysis with ease. I also have experience in deploying machine learning models into production environments using Python, Flask, and Docker, ensuring seamless integration and optimal performance.
+
+With my ability to combine technical skills and domain knowledge, I am committed to delivering high-quality results that drive business growth and success.
+
+
+Column {data-width = 300}
+-----------------------------------------------------------------------
+### Unicorn Startups
+
+
+
+# Charts
+
+Column {data-width=600 .tabset}
+-----------------------------------------------------------------------
+### Map
+
+```{r}
+
+df1 <- df |> 
+  select(Country) |> 
+  group_by(Country) |>
+  mutate(Country = recode_factor(Country, "United States" = "USA")) |> 
+  count(Country) |> 
+  rename(Total = n) |> 
+  arrange(desc(Total)) |> 
+  data.frame()
+
+library(maps)
+
+# Load world map data
+world_map <- map_data("world")
+
+
+# Join your data with the world map data
+data_map <- left_join(df1, world_map, by = c("Country" = "region"))
+data_mapx <- left_join(world_map, df1, by = c("region"="Country"))
+
+# Fill values in data_mapx where Total = NA as 0
+data_mapx<- data_mapx |> 
+  mutate(Total = if_else(is.na(Total), 0, Total))
+
+
+# Create the plot with ggplot2
+plotly::ggplotly(ggplot(data_mapx, aes(x = long, y = lat, group = group, fill = Total, text = region)) +
+  geom_polygon(color = "#ffffff", linewidth = 0.1) +
+  scale_fill_gradient(na.value = "#f1d6ff", low = "#c77dff", high = "#10002b", limits = c(1, 500)) +
+  labs(title = "Countries with Unicorn startups")+
+  theme_void()+
+  theme(panel.background = element_rect(fill = "white"),
+        legend.position = "none"))
+```
+
+
+### Top 4 Aside
+
+```{r}
+dfx<- df %>% 
+  dplyr::select(Country, Company, Valuation) |> 
+  # filter(Country %in% c('United States', 'China','India', 'United Kingdom', 'Germany')) %>%
+  group_by(Country)  |>  
+  summarise(Valuation = sum(Valuation)) |> 
+  arrange(desc(Valuation))
+
+dfx2<- cbind(id = 1:nrow(dfx),dfx)
+# calculate the ANGLE of the labels
+
+# calculate the ANGLE of the labels
+number_of_bar <- nrow(dfx2)
+angle <-  90 - 360 * (dfx2$id-0.5) /number_of_bar 
+
+dfx2$hjust<-ifelse( angle < -90, 1, 0)
+dfx2$angle<-ifelse(angle < -90, angle+180, angle)
+
+
+p <- ggplot(dfx2, aes(x=as.factor(id), y=Valuation)) +
+  
+  # This add the bars with a blue color
+  geom_bar(stat="identity", fill=alpha("#e0aaff", 1)) +
+  
+  ylim(-100,100) +
+  
+  # Custom the theme: no axis title and no cartesian grid
+  theme_minimal() +
+  theme(
+    axis.text = element_blank(),
+    axis.title = element_blank(),
+    panel.grid = element_blank(),
+    plot.margin = unit(rep(-1,4), "cm")
+  ) +
+  
+  # This makes the coordinate polar instead of cartesian.
+  coord_polar(start = 0) +
+  
+  # Add the labels, using the label_data dataframe that we have created before
+  geom_text(data=dfx2, aes(x=id, y=Valuation+10, label=Country, hjust=hjust), 
+            color="#10002b", fontface="bold",alpha=0.6, size=2.5, angle= dfx2$angle, 
+            inherit.aes = FALSE )
+
+p
+```
+
+### Tree Map
+
+
+```{r}
+
+library(treemapify)
+
+dfx |> 
+  head(20) |> 
+  ggplot(aes(area = Valuation, fill = Valuation,
+             label = paste(Country, Valuation, sep = "\n")))+
+  geom_treemap()+
+  geom_treemap_text(color = "white",
+                    place = "centre",
+                    size = 12)+
+  theme(legend.position = "none")+
+  scale_fill_gradient(low = "#e0aaff",high = "#10002b")+
+  labs(title = "Top unicorn startups by valuation (In million dollars)")
+```
+
+
+### Countries Table
+
+```{r}
+x<- levels(as.factor(df$Country))
+
+inputPanel(
+  div(style = "display: flex; align-items: left; margin-bottom: 10px; width: 300px;",
+    HTML("<label for='country' style='margin-right: 20px;'>Country:</label>"),
+    selectInput("country", label = NULL, 
+                choices = x, selected = "United states")
+    
+  ),
+  style = "height: 35px;"
+)
+
+column(width = 12,
+       DT::renderDataTable({
+         cDf <- df |>
+           select(Country, Company, City, Industry, Valuation) |>
+           filter(Country == input$country) |> 
+           select(-Country)
+
+         cDf
+       }), style = "height: 85%;"
+       )
+```
+
+
+
+Column {data-width=400}
+-----------------------------------------------------------------------
+
+
+### Top 20 companies
+
+```{r fig.height=10}
+df |> 
+  head(20) |> 
+  ggplot(aes(x = reorder(Company, Valuation), y = Valuation, fill = Valuation))+
+  geom_bar(stat = 'identity')+
+  scale_fill_gradient(low = "#e0aaff", high = "#10002b")+
+  coord_flip()+
+  theme_classic()+
+  theme(legend.position = "none", axis.text.y = element_text(size = 12))+
+  labs(x = "Companies", y = "Valuation [In billion dollars]", 
+       title = "Top companies by valuation")
+
+
+
+```
